@@ -11,11 +11,25 @@ import {
   RootHealthCheck,
   ExecutionInlineHealth,
   RequestLineageBuckets,
-  RequestAttemptsTree,
-  RequestItem,
-  AttemptItem,
-  ReceiptItem
+  RequestAttemptsTree
 } from '../types';
+import {
+  mapRequestItem,
+  mapLeaseItem,
+  mapAttemptItem,
+  mapReceiptItem,
+  mapRootHealth,
+  mapInlineHealth,
+  mapRequestState,
+  mapStaleLeases,
+  mapLeaseLifecycle,
+  mapIntegrityScan,
+  mapRequestAttemptsTree,
+  mapReceiptsLineage,
+  mapFleetByExecutor,
+  mapStatusDistribution,
+  mapPipelineOrigin
+} from './apiAdapters';
 
 export interface ApiClientConfig {
   useMock: boolean;
@@ -51,7 +65,8 @@ export const executionApi = {
       return mockStore.getRootHealth();
     }
     try {
-      return await fetchJson<RootHealthCheck>('/health');
+      const raw = await fetchJson<any>('/health');
+      return mapRootHealth(raw);
     } catch {
       return mockStore.getRootHealth();
     }
@@ -62,19 +77,21 @@ export const executionApi = {
       return mockStore.getInlineHealth();
     }
     try {
-      return await fetchJson<ExecutionInlineHealth>(`${clientConfig.baseUrl}/health`);
+      const raw = await fetchJson<any>(`${clientConfig.baseUrl}/health`);
+      return mapInlineHealth(raw);
     } catch {
       return mockStore.getInlineHealth();
     }
   },
 
-  // 1. Lifecycle state — the natural aggregate root
+  // 1. Lifecycle state — aggregate root
   async getRequestState(id: string): Promise<RequestStateResponse | null> {
     if (clientConfig.useMock) {
       return mockStore.getRequestState(id);
     }
     try {
-      return await fetchJson<RequestStateResponse>(`${clientConfig.baseUrl}/requests/${id}/state`);
+      const raw = await fetchJson<any>(`${clientConfig.baseUrl}/requests/${encodeURIComponent(id)}/state`);
+      return mapRequestState(raw);
     } catch {
       return mockStore.getRequestState(id);
     }
@@ -86,7 +103,8 @@ export const executionApi = {
       return mockStore.getStaleLeases();
     }
     try {
-      return await fetchJson<LeaseItem[]>(`${clientConfig.baseUrl}/leases/stale`);
+      const raw = await fetchJson<any>(`${clientConfig.baseUrl}/leases/stale`);
+      return mapStaleLeases(raw);
     } catch {
       return mockStore.getStaleLeases();
     }
@@ -97,7 +115,8 @@ export const executionApi = {
       return mockStore.getLeaseLifecycle(id);
     }
     try {
-      return await fetchJson<LeaseLifecycleResponse>(`${clientConfig.baseUrl}/leases/${id}/lifecycle`);
+      const raw = await fetchJson<any>(`${clientConfig.baseUrl}/leases/${encodeURIComponent(id)}/lifecycle`);
+      return mapLeaseLifecycle(raw);
     } catch {
       return mockStore.getLeaseLifecycle(id);
     }
@@ -109,7 +128,8 @@ export const executionApi = {
       return mockStore.getIntegrityScan();
     }
     try {
-      return await fetchJson<IntegrityScanResponse>(`${clientConfig.baseUrl}/health/integrity-scan`);
+      const raw = await fetchJson<any>(`${clientConfig.baseUrl}/health/integrity-scan`);
+      return mapIntegrityScan(raw);
     } catch {
       return mockStore.getIntegrityScan();
     }
@@ -121,7 +141,8 @@ export const executionApi = {
       return mockStore.getRequestAttemptsTree(requestId);
     }
     try {
-      return await fetchJson<RequestAttemptsTree>(`${clientConfig.baseUrl}/requests/${requestId}/attempts`);
+      const raw = await fetchJson<any>(`${clientConfig.baseUrl}/requests/${encodeURIComponent(requestId)}/attempts`);
+      return mapRequestAttemptsTree(raw, requestId);
     } catch {
       return mockStore.getRequestAttemptsTree(requestId);
     }
@@ -132,7 +153,8 @@ export const executionApi = {
       return mockStore.getReceiptsLineage(requestId);
     }
     try {
-      return await fetchJson<RequestLineageBuckets>(`${clientConfig.baseUrl}/requests/${requestId}/receipts/lineage`);
+      const raw = await fetchJson<any>(`${clientConfig.baseUrl}/requests/${encodeURIComponent(requestId)}/receipts/lineage`);
+      return mapReceiptsLineage(raw, requestId);
     } catch {
       return mockStore.getReceiptsLineage(requestId);
     }
@@ -147,7 +169,8 @@ export const executionApi = {
       const url = executorId 
         ? `${clientConfig.baseUrl}/health/by-executor?executor_id=${encodeURIComponent(executorId)}`
         : `${clientConfig.baseUrl}/health/by-executor`;
-      return await fetchJson<ExecutorFleetSummary[] | ExecutorFleetDetail>(url);
+      const raw = await fetchJson<any>(url);
+      return mapFleetByExecutor(raw, executorId);
     } catch {
       return mockStore.getFleetByExecutor(executorId);
     }
@@ -158,7 +181,8 @@ export const executionApi = {
       return mockStore.getStatusDistribution();
     }
     try {
-      return await fetchJson<StatusDistributionResponse>(`${clientConfig.baseUrl}/health/status-distribution`);
+      const raw = await fetchJson<any>(`${clientConfig.baseUrl}/health/status-distribution`);
+      return mapStatusDistribution(raw);
     } catch {
       return mockStore.getStatusDistribution();
     }
@@ -170,7 +194,8 @@ export const executionApi = {
       return mockStore.getPipelineOrigin(receiptId);
     }
     try {
-      return await fetchJson<PipelineOriginResponse>(`${clientConfig.baseUrl}/receipts/${receiptId}/pipeline-origin`);
+      const raw = await fetchJson<any>(`${clientConfig.baseUrl}/receipts/${encodeURIComponent(receiptId)}/pipeline-origin`);
+      return mapPipelineOrigin(raw, receiptId);
     } catch {
       return mockStore.getPipelineOrigin(receiptId);
     }
@@ -178,18 +203,94 @@ export const executionApi = {
 
   // Direct collection listings for table views
   async listRequests(filter?: { status?: string; search?: string; limit?: number; offset?: number }) {
-    return mockStore.listRequests(filter);
+    if (clientConfig.useMock) {
+      return mockStore.listRequests(filter);
+    }
+    try {
+      const params = new URLSearchParams();
+      if (filter?.status) params.set('status', filter.status);
+      if (filter?.search) params.set('search', filter.search);
+      if (filter?.limit !== undefined) params.set('limit', String(filter.limit));
+      if (filter?.offset !== undefined) params.set('offset', String(filter.offset));
+
+      const query = params.toString() ? `?${params.toString()}` : '';
+      const raw = await fetchJson<any>(`${clientConfig.baseUrl}/requests${query}`);
+      const items = (raw.items || []).map(mapRequestItem);
+      return {
+        total: Number(raw.total ?? items.length),
+        items
+      };
+    } catch {
+      return mockStore.listRequests(filter);
+    }
   },
 
   async listLeases(filter?: { status?: string; search?: string; limit?: number; offset?: number }) {
-    return mockStore.listLeases(filter);
+    if (clientConfig.useMock) {
+      return mockStore.listLeases(filter);
+    }
+    try {
+      const params = new URLSearchParams();
+      if (filter?.status) params.set('status', filter.status);
+      if (filter?.search) params.set('search', filter.search);
+      if (filter?.limit !== undefined) params.set('limit', String(filter.limit));
+      if (filter?.offset !== undefined) params.set('offset', String(filter.offset));
+
+      const query = params.toString() ? `?${params.toString()}` : '';
+      const raw = await fetchJson<any>(`${clientConfig.baseUrl}/leases${query}`);
+      const items = (raw.items || []).map(mapLeaseItem);
+      return {
+        total: Number(raw.total ?? items.length),
+        items
+      };
+    } catch {
+      return mockStore.listLeases(filter);
+    }
   },
 
   async listAttempts(filter?: { status?: string; search?: string; limit?: number; offset?: number }) {
-    return mockStore.listAttempts(filter);
+    if (clientConfig.useMock) {
+      return mockStore.listAttempts(filter);
+    }
+    try {
+      const params = new URLSearchParams();
+      if (filter?.status) params.set('status', filter.status);
+      if (filter?.search) params.set('search', filter.search);
+      if (filter?.limit !== undefined) params.set('limit', String(filter.limit));
+      if (filter?.offset !== undefined) params.set('offset', String(filter.offset));
+
+      const query = params.toString() ? `?${params.toString()}` : '';
+      const raw = await fetchJson<any>(`${clientConfig.baseUrl}/attempts${query}`);
+      const items = (raw.items || []).map((item: any, idx: number) => mapAttemptItem(item, idx));
+      return {
+        total: Number(raw.total ?? items.length),
+        items
+      };
+    } catch {
+      return mockStore.listAttempts(filter);
+    }
   },
 
   async listReceipts(filter?: { event_type?: string; search?: string; limit?: number; offset?: number }) {
-    return mockStore.listReceipts(filter);
+    if (clientConfig.useMock) {
+      return mockStore.listReceipts(filter);
+    }
+    try {
+      const params = new URLSearchParams();
+      if (filter?.event_type) params.set('type', filter.event_type); // Backend query param is 'type'
+      if (filter?.search) params.set('search', filter.search);
+      if (filter?.limit !== undefined) params.set('limit', String(filter.limit));
+      if (filter?.offset !== undefined) params.set('offset', String(filter.offset));
+
+      const query = params.toString() ? `?${params.toString()}` : '';
+      const raw = await fetchJson<any>(`${clientConfig.baseUrl}/receipts${query}`);
+      const items = (raw.items || []).map(mapReceiptItem);
+      return {
+        total: Number(raw.total ?? items.length),
+        items
+      };
+    } catch {
+      return mockStore.listReceipts(filter);
+    }
   }
 };
