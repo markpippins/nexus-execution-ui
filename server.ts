@@ -5,7 +5,7 @@ import { mockStore } from './src/services/mockData.ts';
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = parseInt(process.env.PORT || '4205', 10);
 
   app.use(express.json());
 

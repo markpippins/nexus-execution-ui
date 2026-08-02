@@ -1,6 +1,6 @@
-# DRIFT.md — exec-obs-ui ↔ execution-srv
+# DRIFT.md — execution-ui ↔ execution-srv
 
-> **Purpose:** Document all known shape differences between the exec-obs-ui
+> **Purpose:** Document all known shape differences between the execution-ui
 > React client (types + apiClient) and the execution-srv Express backend.
 >
 > The client defaults to **mock mode** (`apiClient.ts:useMock = true`) for
